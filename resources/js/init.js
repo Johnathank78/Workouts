@@ -46,10 +46,25 @@ function isIntruder(){
 
     $('.main_page').css('display', 'none');
     showBlurPage('selection_sessionFinished', true);
+
+    // Escape for the cases the detection misses, or for someone who really wants the browser version.
+    // parameters are not read yet here, so the label follows the browser language.
+    const isFrench = /^fr/i.test(navigator.language || "");
+
+    $('.intruder_bypass')
+        .text(isFrench ? "Utiliser l'appli ici quand même" : "Use the app here anyway")
+        .css('display', 'inline-block')
+        .one('click', function(){
+            try{
+                localStorage.setItem(intruderBypassKey, "true");
+            }catch(err){};
+
+            location.reload();
+        });
 };
 
 $(document).ready(async function(){
-    if(platform == "Web" && isWebMobile && !isStandalonePWA){
+    if(platform == "Web" && isWebMobile && !isStandalonePWA && !isIntruderBypassed()){
         isIntruder();
     }else{
         hotfix = hotfix_read();

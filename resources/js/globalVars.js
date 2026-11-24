@@ -2,7 +2,34 @@ const platform = "Web";
 const mobile = /iPhone|iPad|iPod/i.test(navigator.userAgent) ? "IOS" : "Android";
 
 const isWebMobile = /Mobi/.test(navigator.userAgent);
-const isStandalonePWA = window.matchMedia('(display-mode: standalone)').matches;
+// Installed web app detection.
+// Only testing "(display-mode: standalone)" blocked installed apps: the manifest has
+// display_override ["fullscreen", "minimal-ui"], so Chrome Android runs the installed app in "fullscreen"
+// and standalone never matches. iOS also has its own flag (navigator.standalone), and a Trusted Web Activity
+// is only visible through its android-app:// referrer.
+const isStandalonePWA = (function(){
+    const installedModes = ["standalone", "fullscreen", "minimal-ui", "window-controls-overlay"];
+
+    try{
+        if(installedModes.some(mode =&gt; window.matchMedia('(display-mode: ' + mode + ')').matches)){return true};
+    }catch(err){};
+
+    if(window.navigator.standalone === true){return true};
+    if(document.referrer.startsWith("android-app://")){return true};
+
+    return false;
+})();
+
+// Set by the "use the app here anyway" button of the intruder page
+const intruderBypassKey = "intruderBypass";
+
+function isIntruderBypassed(){
+    try{
+        return localStorage.getItem(intruderBypassKey) === "true";
+    }catch(err){
+        return false;
+    };
+};
 
 var addIMG = false; var binIMG = false; var editIMG = false; var grabIMG = false; var pauseIMG = false; var playIMG = false; var sound_fullIMG = false; 
 var sound_midIMG = false; var sound_lowIMG = false; var sound_offIMG = false; var timer2IMG = false; var tickIMG = false; var arrowIMG = false; 
