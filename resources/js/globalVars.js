@@ -7,17 +7,22 @@ const isWebMobile = /Mobi/.test(navigator.userAgent);
 // display_override ["fullscreen", "minimal-ui"], so Chrome Android runs the installed app in "fullscreen"
 // and standalone never matches. iOS also has its own flag (navigator.standalone), and a Trusted Web Activity
 // is only visible through its android-app:// referrer.
+// WARNING: the build escapes the greater-than and less-than characters of this file (an arrow function broke the
+// online app), so keep this file free of them: no arrow functions, no comparisons with those operators.
 const isStandalonePWA = (function(){
     const installedModes = ["standalone", "fullscreen", "minimal-ui", "window-controls-overlay"];
+    let installed = false;
 
     try{
-        if(installedModes.some(mode =&gt; window.matchMedia('(display-mode: ' + mode + ')').matches)){return true};
+        installedModes.forEach(function(mode){
+            if(window.matchMedia('(display-mode: ' + mode + ')').matches){installed = true};
+        });
     }catch(err){};
 
-    if(window.navigator.standalone === true){return true};
-    if(document.referrer.startsWith("android-app://")){return true};
+    if(window.navigator.standalone === true){installed = true};
+    if(document.referrer.indexOf("android-app://") === 0){installed = true};
 
-    return false;
+    return installed;
 })();
 
 // Set by the "use the app here anyway" button of the intruder page
