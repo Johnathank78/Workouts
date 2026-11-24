@@ -1,6 +1,6 @@
 # Workouts
 
-JohnWorkout est une web-application de musculation, permettant à ses utilisateurs de prévoir, effectuer et grader trace de leurs séances de musculation dans le détail. L'application à été portée sur IOS et Android grâce à CapacitorJS et est également aux normes PWA.
+Workouts est une web-application de musculation, permettant à ses utilisateurs de prévoir, effectuer et grader trace de leurs séances de musculation dans le détail. L'application à été portée sur IOS et Android grâce à CapacitorJS et est également aux normes PWA.
 
 ## Table des matières
 
@@ -14,21 +14,21 @@ JohnWorkout est une web-application de musculation, permettant à ses utilisateu
 ### Android (Natif)
 Téléchargez l'APK depuis l'adresse : [Workouts.apk](https://drive.google.com/file/d/1EmwNoaAypXayjzmixos6Ryq7omuPqh1k/view?usp=sharing)
 
-Ou installez la en tant que PWA : [johnathank78.github.io/JohnWorkout.github.io/](https://johnathank78.github.io/JohnWorkout.github.io/)
+Ou installez la en tant que PWA : [johnathank78.github.io/Workouts.github.io/](https://johnathank78.github.io/Workouts.github.io/)
 
 ### iOS (Web)
 A ce jour, il est uniquement possible d'installer l'application en tant que PWA.
 
-Ouvrez Safari et ajouter le site web à l'écran d'acceuil : [johnathank78.github.io/JohnWorkout.github.io/](https://johnathank78.github.io/JohnWorkout.github.io/)
+Ouvrez Safari et ajouter le site web à l'écran d'acceuil : [johnathank78.github.io/Workouts.github.io/](https://johnathank78.github.io/Workouts.github.io/)
 
 ### Web
-Il n'y a pas besoin d'installer l'application, elle est complètement utilisable depuis un navigateur : [johnathank78.github.io/JohnWorkout.github.io/](https://johnathank78.github.io/JohnWorkout.github.io/)
+Il n'y a pas besoin d'installer l'application, elle est complètement utilisable depuis un navigateur : [johnathank78.github.io/Workouts.github.io/](https://johnathank78.github.io/Workouts.github.io/)
 
 Toute fois il est également possible de l'installer en tant que PWA, pour ce faire clicquer sur "Installer en tant qu'application" depuis votre navigateur web.
 
 ## Utilisation
 
- JohnWorkout est conçue pour vous aider à créer, exécuter, suivre et programmer vos séances d'entraînement de manière efficace. Voici comment utiliser l'application selon 5 axes principaux :
+ Workouts est conçue pour vous aider à créer, exécuter, suivre et programmer vos séances d'entraînement de manière efficace. Voici comment utiliser l'application selon 5 axes principaux :
  
  
  ### 1. Création
