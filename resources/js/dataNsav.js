@@ -576,6 +576,8 @@ function audio_save(val){
 
 function audio_set(val){
     if(platform == "Web"){
+        // HTMLAudio volume is read-only on iOS: the real volume goes through the Web Audio gain
+        webSound.setVolume(val);
         beepPlayer.setVolume(val);
         beep2x3Player.setVolume(val);
     }else{

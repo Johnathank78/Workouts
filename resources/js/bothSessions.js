@@ -1055,6 +1055,13 @@ function screensaver_toggle(on){
             $("html").css("background-color", color);
 			$(".footer").css("background-color", mid_color);
 
+            // Release the touch lock with the screensaver: when it closed by itself (end of a rest timer) the lock
+            // stayed on, every touchend was cancelled on mobile and no button responded until the app was reloaded
+            if(lockState){
+                lockState = false;
+                $(".lockTouch").text(textAssets[parameters.language].screenSaver.lock);
+            };
+
 
             if(platform == "Mobile" && mobile != "IOS"){
                 StatusBar.setBackgroundColor({color: color});
@@ -1188,21 +1195,9 @@ $(document).ready(function(){
     };
 
     $(document).on('longClicked', '.session_volume_slider_container', function () {
-        if(beepPlayer && beepPlayer.close){
-            beepPlayer.close();
-        };
-
-        if(beep2x3Player && beep2x3Player.close){
-            beep2x3Player.close();
-        };
-    
-        beepPlayer = null;
-        beep2x3Player = null;
-    
-        beepPlayer = constructPlayer(beepPath, 1000);
-        beep2x3Player = constructPlayer(beep2x3Path, 1000);
-    
-        bottomNotification("fixSound");
+        // longClicked is dispatched from a timer, which iOS does not count as a user gesture:
+        // the audio is rebuilt on the finger release, and the notification is shown once it is done
+        if(platform == "Web"){webSound.requestFix()};
     });
     
     // RECOVERY;

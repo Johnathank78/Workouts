@@ -50,6 +50,12 @@ class FlexReorder{
         this.avoidIndexes = [];
         this.bounds = [false, false];
 
+        // Optional hooks: avoidResolver() returns the indexes to lock (read at each grab, overrides avoidIndexes);
+        // boundsFilter(bounds, draggedChild) can narrow the bounds once the drag has started.
+        this.avoidResolver = null;
+        this.boundsFilter = null;
+        this.delaySince = 0;
+
         this.draggedItem = null;
         this.hoveredItem = null;
         this.hover_TO = null;
@@ -148,13 +154,14 @@ class FlexReorder{
                 this.mouseX = e.clientX;
                 this.mouseY = e.clientY;
 
-                if(this.avoidIndexes.includes(index)){return};
+                this.releaseStuckDelay();
+                if(this.getAvoidIndexes().includes(index)){return};
 
                 this.beforeSelection(focusedChild, e.target, ((this.mouseY - $(focusedChild).offset().top)/($(focusedChild).outerHeight()))*100);
 
                 this.mousedown(focusedChild);
                 this.startDragging(focusedChild);
-                this.bounds = this.getBounds(index);
+                this.bounds = this.computeBounds(focusedChild);
             });
             
             $(document).on("mousemove", (e) => {
@@ -223,7 +230,8 @@ class FlexReorder{
                 this.mouseX = e.touches[0].clientX;
                 this.mouseY = e.touches[0].clientY;
 
-                if(this.avoidIndexes.includes(index)){return};
+                this.releaseStuckDelay();
+                if(this.getAvoidIndexes().includes(index)){return};
 
                 this.beforeSelectionTimeout = setTimeout(() => {
                     this.beforeSelection(focusedChild, e.target, ((this.mouseY - $(focusedChild).offset().top)/($(focusedChild).outerHeight()))*100);
@@ -235,7 +243,7 @@ class FlexReorder{
                     this.mousedown(focusedChild);
                     this.startDragging(focusedChild);
 
-                    this.bounds = this.getBounds(index);
+                    this.bounds = this.computeBounds(focusedChild);
                 }, this.beforeSelectionDelay);
             });
 
@@ -290,13 +298,15 @@ class FlexReorder{
             },{passive:false});
 
 
-            $(this.container).on("touchend", (e) => {
+            // touchcancel: iOS fires it instead of touchend on system gestures, app switch or native scroll;
+            // without it a merged tile or a half-started drag stays stuck.
+            $(this.container).on("touchend touchcancel", (e) => {
                 if(this.mobile_longPress){clearTimeout(this.mobile_longPress); this.mobile_longPress = false};
                 if(this.beforeSelectionTimeout){clearTimeout(this.beforeSelectionTimeout); this.beforeSelectionTimeout = false};
 
                 if(this.draggedItem){
                     this.mouseup();
-                }else if($(e.target).is('.reorder__input') && !$(e.target).is('.reorder__avoid') && this.inputCursorPos){
+                }else if(e.type === "touchend" && $(e.target).is('.reorder__input') && !$(e.target).is('.reorder__avoid') && this.inputCursorPos){
                     e.preventDefault();
                     e.target.focus();
                     e.target.setSelectionRange(this.inputCursorPos, this.inputCursorPos);
@@ -467,16 +477,36 @@ class FlexReorder{
     reorder(dragged, dragged_over){
 
         if(this.delay){
-            this.delay = false;
-            this.hoveredItem = null;
-
             let item_list = $(this.container).children(".reorder__child");
 
             let draggedIndex = $(item_list).index(dragged);
             let dragged_overIndex = $(item_list).index(dragged_over);
             let step = Math.abs(draggedIndex - dragged_overIndex);
 
-            let [dragged_translate, other_transalate, vector] = this.translate(dragged, dragged_over, step);
+            // A tile removed from the DOM while dragging (set dropped by a timer, stale cache) must not start a reorder
+            if(draggedIndex < 0 || dragged_overIndex < 0 || step == 0){
+                this.hoveredItem = null;
+                return;
+            };
+
+            let translated = false;
+            try{
+                translated = this.translate(dragged, dragged_over, step);
+            }catch(err){
+                console.warn("FlexReorder: reorder aborted", err);
+            };
+
+            // Never leave this.delay at false on a failed reorder: that blocked every reorder until the app was reloaded
+            if(!translated){
+                this.hoveredItem = null;
+                return;
+            };
+
+            this.delay = false;
+            this.delaySince = Date.now();
+            this.hoveredItem = null;
+
+            let [dragged_translate, other_transalate, vector] = translated;
             let insert = 0;
 
             $(item_list).css("transition", "transform "+this.reorderSpeed+"ms");
@@ -644,11 +674,13 @@ class FlexReorder{
             let data_3 = 0;
 
             if(data_1 > 0){
-                gap = Math.abs($(dragged).outerHeight() - ($($(dragged).next()).position().top - $(dragged).position().top));
+                let next = $(dragged).next();
+                gap = next.length ? Math.abs($(dragged).outerHeight() - (next.position().top - $(dragged).position().top)) : 0;
                 data_2 = -$(dragged).outerHeight() - gap;
                 data_3 = "down";
             }else{
-                gap = Math.abs($($(dragged).prev()).outerHeight() - ($(dragged).position().top - $($(dragged).prev()).position().top));
+                let prev = $(dragged).prev();
+                gap = prev.length ? Math.abs(prev.outerHeight() - ($(dragged).position().top - prev.position().top)) : 0;
                 data_2 = $(dragged).outerHeight() + gap;
                 data_3 = "up";
             };
@@ -661,11 +693,13 @@ class FlexReorder{
             let data_3 = 0;
 
             if(data_1 > 0){
-                gap = Math.abs($(dragged).outerWidth() - ($($(dragged).next()).position().left - $(dragged).position().left));
+                let next = $(dragged).next();
+                gap = next.length ? Math.abs($(dragged).outerWidth() - (next.position().left - $(dragged).position().left)) : 0;
                 data_2 = -$(dragged).outerWidth() - gap;
                 data_3 = "down";
             }else{
-                gap = Math.abs($($(dragged).prev()).outerWidth() - ($(dragged).position().left - $($(dragged).prev()).position().left));
+                let prev = $(dragged).prev();
+                gap = prev.length ? Math.abs(prev.outerWidth() - ($(dragged).position().left - prev.position().left)) : 0;
                 data_2 = $(dragged).outerWidth() + gap;
                 data_3 = "up";
             };
@@ -1069,25 +1103,62 @@ class FlexReorder{
         }).get();
     };
 
+    getAvoidIndexes(){
+        if(typeof this.avoidResolver === "function"){
+            try{
+                return this.avoidResolver() || [];
+            }catch(err){
+                console.warn("FlexReorder: avoidResolver failed", err);
+            };
+        };
+
+        return this.avoidIndexes;
+    };
+
+    computeBounds(child){
+        // Index read after beforeSelection, which may have merged tiles and shifted the indexes
+        let index = $(this.container).children(".reorder__child").index(child);
+        let bounds = this.getBounds(index);
+
+        if(typeof this.boundsFilter === "function"){
+            try{
+                bounds = this.boundsFilter(bounds, child) || bounds;
+            }catch(err){
+                console.warn("FlexReorder: boundsFilter failed", err);
+            };
+        };
+
+        return bounds;
+    };
+
+    releaseStuckDelay(){
+        // Safety net: a reorder animation lasts reorderSpeed ms, so a delay still held long after that is stuck
+        if(!this.delay && Date.now() - this.delaySince > this.reorderSpeed + 1000){
+            this.delay = true;
+            this.hoveredItem = null;
+        };
+    };
+
     getBounds(index){
+        const avoidIndexes = this.getAvoidIndexes();
         let closestU = false;
         let closestD = false;
 
         let temp = false;
 
-        for(let i=0; i<this.avoidIndexes.length; i++){
-            temp = Math.abs(this.avoidIndexes[i] - index) - 1;
+        for(let i=0; i<avoidIndexes.length; i++){
+            temp = Math.abs(avoidIndexes[i] - index) - 1;
 
-            if(closestD === false && this.avoidIndexes[i] > index){
-                closestD = this.avoidIndexes[i];
-            }else if(this.avoidIndexes[i] > index && temp < Math.abs(closestD - index) - 1){
-                closestD = this.avoidIndexes[i];
+            if(closestD === false && avoidIndexes[i] > index){
+                closestD = avoidIndexes[i];
+            }else if(avoidIndexes[i] > index && temp < Math.abs(closestD - index) - 1){
+                closestD = avoidIndexes[i];
             };
 
-            if(closestU === false && this.avoidIndexes[i] < index){
-                closestU = this.avoidIndexes[i];
-            }else if(this.avoidIndexes[i] < index && temp < Math.abs(closestU - index) - 1){
-                closestU = this.avoidIndexes[i];
+            if(closestU === false && avoidIndexes[i] < index){
+                closestU = avoidIndexes[i];
+            }else if(avoidIndexes[i] < index && temp < Math.abs(closestU - index) - 1){
+                closestU = avoidIndexes[i];
             };
         };
 

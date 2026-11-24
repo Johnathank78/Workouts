@@ -43,6 +43,7 @@ function closePanel(src, notAnimated=false){
             $(".session_next_exercises_container").css("maxHeight", "calc(19vh - 45px)");
             behindExerciseContainer(true);
             ncState = false;
+            updateExpanderVisibility();
             break;
 
         case "xin":

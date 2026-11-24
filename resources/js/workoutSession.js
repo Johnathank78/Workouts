@@ -39,6 +39,7 @@ var lastExo = false;
 var undoMemory = [];
 var undoCapture = false;
 var pastDataShown = false;
+var forcedEnd = false;
 
 const emptyExoObserver = new MutationObserver(function (mutationList) {
     for (const mutation of mutationList) {
@@ -57,6 +58,119 @@ function getIDFromExoElem(elem){
 
 function getHint(session, id){
     return session.exoList.filter(exo => exo.id === id).map(exo => exo.hint)[0];
+};
+
+// HISTORY HELPERS
+
+function getTempHistoryExo(id){
+    let index = getHistoryExoIndex(tempNewHistory, id);
+
+    if(index == -1 || !tempNewHistory.exoList[index]){
+        // An unknown id used to throw inside the button handler: every click failed and the session was stuck
+        console.warn("History entry not found for id:", id);
+        return null;
+    };
+
+    return tempNewHistory.exoList[index];
+};
+
+function pushHistorySet(id, set){
+    let historyExo = getTempHistoryExo(id);
+    if(historyExo){historyExo.setList.push(set)};
+};
+
+// SETS TRACK HELPERS
+
+function getSetsTiles(){
+    return $(".session_next_exercises_container").children(".reorder__child");
+};
+
+function tileEndsWithBreak(tile){
+    return $(tile).children(".session_next_exercise").last().find(".session_next_exerciseType").first().text() == "Brk.";
+};
+
+function getSetsReorderLock(){
+    // The exercise in progress loses its type tag when it starts (next_exercise): lock its tile, and only it.
+    // Read from the DOM at each grab, so undo, recovery and skips can never leave a stale lock behind.
+    let first = getSetsTiles().first();
+    let inProgress = $(first).children(".session_next_exercise").filter(function(){
+        return $(this).children(".session_next_exercise_type").length == 0;
+    });
+
+    return inProgress.length > 0 ? [0] : [];
+};
+
+function setsReorderBoundsFilter(bounds, dragged){
+    // A break must never end the track: once reached, nothing comes after it and the session cannot be finished.
+    let tiles = getSetsTiles();
+    let n = tiles.length;
+    let index = tiles.index(dragged);
+    let up = bounds[0];
+    let down = bounds[1];
+
+    if(n < 2 || index < 0){return bounds};
+
+    if(tileEndsWithBreak(dragged) && index != n - 1){
+        down = (down === false) ? n - 1 : Math.min(down, n - 1);
+    };
+
+    if(index == n - 1 && tileEndsWithBreak(tiles.eq(n - 2))){
+        up = n - 1;
+    };
+
+    return [up, down];
+};
+
+function configureSetsReorder(){
+    if(!sets_reorder){return};
+
+    sets_reorder.avoidResolver = getSetsReorderLock;
+    sets_reorder.boundsFilter = setsReorderBoundsFilter;
+};
+
+function updateExpanderVisibility(){
+    let container = $(".session_next_exercises_container")[0];
+    if(!container){return};
+
+    // Not rendered (page hidden, small-height layout): sizes read 0, keep the current state
+    if(container.getClientRects().length == 0){return};
+
+    // Never hide it while opened: it is the way to close the panel
+    if(ncState){
+        $('.session_next_exercise_expander').css("display", "flex");
+        return;
+    };
+
+    // Compare with the real closed height of the track instead of a window ratio (vh and window height differ on iOS)
+    let overflowing = container.scrollHeight > container.clientHeight + 1;
+    $('.session_next_exercise_expander').css("display", overflowing ? "flex" : "none");
+};
+
+function setSessionFinishedState(){
+    // Nothing left in the track: always leave the session in a state that can be closed
+    forcedEnd = true;
+    finished = true;
+    lastExo = true;
+    beforeExercise = false;
+    next_exo = false;
+
+    if(!noMore){
+        noMore = true;
+        $(".session_next_exercises_container").prepend(`
+        <div class="session_next_exercise_set session_noMore" style="background-color:#363651">
+            <span class="session_next_exercise_name">`+textAssets[parameters.language].inSession.noMore+`</span>
+        </div>
+        `);
+    };
+
+    updateRestBtnStyle('Reset');
+    $('.session_exercise_Rrest_btn').css("display", "none");
+    $(".session_exercise_rest_btn_label").css('display', 'none');
+    $(".session_exercise_Lrest_btn").css({"display": "flex", "cursor": "pointer", "opacity": "1"});
+    $(".Lrest").text(textAssets[parameters.language].inSession.finished).css("display", "block");
+    $(".Ltimer").css("display", "none");
+
+    updateExpanderVisibility();
 };
 
 function openHint(){
@@ -327,6 +441,9 @@ function workout(exercises_list){
     let expectedStats = false;
 
     remaining_sets = 0;
+    forcedEnd = false;
+
+    configureSetsReorder();
 
     //session_setup;
 
@@ -804,19 +921,28 @@ function workout(exercises_list){
         update_info(false);
     };
 
-    if($(".session_next_exercises_container")[0].scrollHeight < $(window).height()*0.19 && $(".session_next_exercises_wrapper").css("display") != "none"){
-        $('.session_next_exercise_expander').css("display", "none");
-    };
+    updateExpanderVisibility();
 
     $(".session_workout_remaining_sets").text(remaining_sets);
 };
 
 async function next_exercise(first){
     if(finished){return};
-    if($(".session_next_exercise_type").length == 0){return};
-    
-    extype = $(".session_next_exercise_type").first().text();
-    next_id = $(".session_next_exercise_id").first().text().replace(/_(1|2)/g, "");
+
+    // Split a break left merged into an exercise (drag gesture interrupted), so it cannot leave stale tags behind
+    if(!FlexReorder.isDown){sets_reorderUpdate(null, false)};
+
+    if($(".session_next_exercise_type").length == 0){
+        // Used to return silently: the track was empty and the session could not be finished anymore
+        setSessionFinishedState();
+        return;
+    };
+
+    // Read the type and the id from the same exercise (the first id in the DOM may belong to another one)
+    let currentExo = $(".session_next_exercise_type").first().closest(".session_next_exercise");
+
+    extype = $(currentExo).children(".session_next_exercise_type").first().text();
+    next_id = $(currentExo).children(".session_next_exercise_id").first().text().replace(/_(1|2)/g, "");
 
     if(first && extype != "Brk."){
 
@@ -850,13 +976,10 @@ async function next_exercise(first){
     }else if(!first || extype == "Brk."){
         beforeExercise = false;
 
-        if(extype != "Brk."){
-            $(".session_next_exercise_id").first().remove();
-        }else{
-            next_id = false;
-        };
+        if(extype == "Brk."){next_id = false};
 
-        $(".session_next_exercise_type").first().remove();
+        // Remove both tags of the started exercise (the break kept its id before, which then shifted the next ids)
+        $(currentExo).children(".session_next_exercise_id, .session_next_exercise_type").remove();
         if($(".session_next_exercise_type").length == 0){lastExo = true};
 
         if(extype == "Brk." || extype == "Wrm."){
@@ -993,6 +1116,16 @@ function getIntervallSpecs(id){
 function update_info_vars(index = 0){
     let nextExo = $('.session_next_exercise')[index];
     extype = $(nextExo).find(".session_next_exerciseType").eq(0).text();
+
+    // Keep next_id on the exercise displayed: after a reorder at "start" the name changed but the hint
+    // (and the history notes) still pointed to the previous first exercise
+    let exoId = $(nextExo).children(".session_next_exercise_id").first().text() || $(nextExo).find(".session_exercise_id").first().text();
+
+    if(extype == "Brk."){
+        next_id = false;
+    }else if(exoId){
+        next_id = exoId.replace(/_(1|2)/g, "");
+    };
 
     if(extype == "Wrm."){
         actual_setNb = 1;
@@ -1583,20 +1716,19 @@ async function dropSet_animated(set){
     let big = $(set).parent().parent();
     let exo = $(set).parent();
 
+    // Measure once the tile is really gone (measuring right away still counted it)
     if($(big).children().length == 1 && $(exo).children(".session_next_exercise_set").length == 1){
         isDeleting = true;
         $(big).animateRemove(-17, 350, () => {
             isDeleting = false;
+            updateExpanderVisibility();
         });
     }else{
         isDeleting = true;
         $(set).animateRemove(-17, 350, () => {
             isDeleting = false;
+            updateExpanderVisibility();
         });
-    };
-
-    if($(".session_next_exercises_container")[0].scrollHeight < ($(window).height()*0.19)){
-        $('.session_next_exercise_expander').css("display", "none");
     };
 };
 
@@ -1611,9 +1743,7 @@ function dropSet_static(set){
         $(set).remove();
     };
 
-    if($(".session_next_exercises_container")[0].scrollHeight < ($(window).height()*0.19)){
-        $('.session_next_exercise_expander').css("display", "none");
-    };
+    updateExpanderVisibility();
 };
 
 async function dropExo_animated(exo){
@@ -1621,17 +1751,13 @@ async function dropExo_animated(exo){
         isDeleting = false;
     });
 
-    if($(".session_next_exercises_container")[0].scrollHeight < ($(window).height()*0.19)){
-        $('.session_next_exercise_expander').css("display", "none");
-    };
+    updateExpanderVisibility();
 };
 
 function dropExo_static(exo){
     $(exo).remove();
 
-    if($(".session_next_exercises_container")[0].scrollHeight < ($(window).height()*0.19)){
-        $('.session_next_exercise_expander').css("display", "none");
-    };
+    updateExpanderVisibility();
 };
 
 // UNDO
@@ -1689,7 +1815,8 @@ function undoMemorise(way, param=false){
                 "actual_setR": actual_setR,
                 "actual_setL": actual_setL,
                 "actual_setNb": actual_setNb,
-                "beforeExercise": beforeExercise
+                "beforeExercise": beforeExercise,
+                "forcedEnd": forcedEnd
             },
             "tempStats": cloneOBJ(tempStats),
             "tempHistory": cloneOBJ(tempNewHistory),
@@ -1733,7 +1860,7 @@ function undoMemorise(way, param=false){
         Ltimer = undoData.varSav.Ltimer;
         Rtimer = undoData.varSav.Rtimer;
         skip = undoData.varSav.skip;
-        ncState = undoData.varSav.ncState;
+        // ncState is not restored: it is the open/closed state of the panel on screen, not session progress
         extype = undoData.varSav.extype;
         next_exo = undoData.varSav.next_exo;
         noMore = undoData.varSav.noMore;
@@ -1752,7 +1879,8 @@ function undoMemorise(way, param=false){
         actual_setL = undoData.varSav.actual_setL;
         actual_setNb = undoData.varSav.actual_setNb;
         beforeExercise = undoData.varSav.beforeExercise;
-        
+        forcedEnd = undoData.varSav.forcedEnd === true;
+
         tempStats.workedTime = undoData.tempStats.workedTime;
         tempStats.weightLifted = undoData.tempStats.weightLifted;
         tempStats.repsDone = undoData.tempStats.repsDone;
@@ -1815,6 +1943,7 @@ function undoMemorise(way, param=false){
         
         $(".session_workout_remaining_sets").text(remaining_sets);
         $('.session_next_exercises_container').html(undoData.html);
+        updateExpanderVisibility();
 
         if(!hasReallyStarted){
             $('.session_undo').css('display', 'none');
@@ -1833,6 +1962,8 @@ $(document).ready(function(){
     $(".session_exercise_Lrest_btn").on("click", function(){
         if(LrestLongClicked){LrestLongClicked = false; return};
         if(LinputShown || cannotClick || isDeleting || Ltimer || Ldone){return};
+
+        if(forcedEnd){quit_session(); return};
 
         if(hasStarted){
             undoMemorise('in');
@@ -1855,23 +1986,11 @@ $(document).ready(function(){
                 let reps = next_name.includes("Alt.") ? 2*parseInt($(".session_current_exercise_specs_reps").val()) : parseInt($(".session_current_exercise_specs_reps").val());
                 let weight = parseFloat($(".session_current_exercise_specs_weight").val());
                 
-                extype == 'Uni.' ? 
-                    tempNewHistory.exoList[getHistoryExoIndex(tempNewHistory, next_id+"_1")].setList.push(generateHistorySetObj({
-                        "type": extype,
-                        "reps": reps,
-                        "weight": weight
-                    })) : 
-                    next_name.includes("Alt.") ? 
-                        tempNewHistory.exoList[getHistoryExoIndex(tempNewHistory, next_id)].setList.push(generateHistorySetObj({
-                            "type": extype,
-                            "reps": Math.round(reps/2),
-                            "weight": weight
-                        })) : 
-                        tempNewHistory.exoList[getHistoryExoIndex(tempNewHistory, next_id)].setList.push(generateHistorySetObj({
-                            "type": extype,
-                            "reps": reps,
-                            "weight": weight
-                        }));
+                pushHistorySet(extype == 'Uni.' ? next_id+"_1" : next_id, generateHistorySetObj({
+                    "type": extype,
+                    "reps": (extype != 'Uni.' && next_name.includes("Alt.")) ? Math.round(reps/2) : reps,
+                    "weight": weight
+                }));
 
                 tempStats.repsDone += reps;
 
@@ -1913,12 +2032,17 @@ $(document).ready(function(){
                 $(".session_workout_remaining_sets").text(remaining_sets);
                 next_exercise(true);
             }
+        }else if(finished){
+            // A break ending the session showed "finished" but this button had no branch for it
+            quit_session();
         };
     });
 
     $(".session_exercise_Rrest_btn").on("click", function(){
         if(RrestLongClicked){RrestLongClicked = false; return};
         if(RinputShown || cannotClick || isDeleting || Rtimer || Rdone){return};
+
+        if(forcedEnd){quit_session(); return};
 
         if(hasStarted){
             undoMemorise('in');
@@ -1934,7 +2058,7 @@ $(document).ready(function(){
             let reps = next_name.includes("Alt.") ? 2*parseInt($(".session_current_exercise_specs_reps").val()) : parseInt($(".session_current_exercise_specs_reps").val());
             let weight = parseFloat($(".session_current_exercise_specs_weight").val());
 
-            tempNewHistory.exoList[getHistoryExoIndex(tempNewHistory, next_id+"_2")].setList.push(generateHistorySetObj({
+            pushHistorySet(next_id+"_2", generateHistorySetObj({
                 "type": extype,
                 "reps": reps,
                 "weight": weight
@@ -2098,19 +2222,8 @@ $(document).ready(function(){
 
     $(document).on('blur', '.session_workout_historyNotes_inp', function(){
         if(['Bi.', 'Uni.', 'Int.'].includes(extype)){
-            if(extype == "Uni."){
-                if($(this).val() == ""){
-                    tempNewHistory.exoList[getHistoryExoIndex(tempNewHistory, next_id+"_1")].note = false;
-                }else{
-                    tempNewHistory.exoList[getHistoryExoIndex(tempNewHistory, next_id+"_1")].note = $(this).val();
-                };
-            }else{
-                if($(this).val() == ""){
-                    tempNewHistory.exoList[getHistoryExoIndex(tempNewHistory, next_id)].note = false;
-                }else{
-                    tempNewHistory.exoList[getHistoryExoIndex(tempNewHistory, next_id)].note = $(this).val();
-                };
-            };
+            let historyExo = getTempHistoryExo(extype == "Uni." ? next_id+"_1" : next_id);
+            if(historyExo){historyExo.note = $(this).val() == "" ? false : $(this).val()};
         };
 
         closePanel("historyNotes");
@@ -2204,10 +2317,12 @@ $(document).ready(function(){
 
     $(document).on("selectionAborted", ".session_next_exercises_container", function(e){
         sets_reorderUpdate(e, false);
+        updateExpanderVisibility();
     });
 
     $(document).on("reorderStopped", ".session_next_exercises_container", function(e){
         sets_reorderUpdate(e, false);
+        updateExpanderVisibility();
     });
     
     $(document).on("hasBeenReordered", ".session_next_exercises_container", function(e){
