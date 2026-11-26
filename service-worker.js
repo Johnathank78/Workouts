@@ -1,4 +1,4 @@
-const CACHE_NAME = 'app-cache-v7.18';
+const CACHE_NAME = 'app-cache-v7.19';
 
 self.addEventListener('install', event => {
     event.waitUntil(
@@ -122,6 +122,7 @@ self.addEventListener('install', event => {
                 '/Workouts/resources/js/timeSelector.js',
                 '/Workouts/resources/js/updatePage.js',
                 '/Workouts/resources/js/utility.js',
+                '/Workouts/resources/js/webSound.js',
                 '/Workouts/resources/js/workoutSession.js',
                 '/Workouts/resources/sounds/beep.mp3',
                 '/Workouts/resources/sounds/beep2x3.mp3'
